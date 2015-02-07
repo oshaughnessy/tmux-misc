@@ -1,0 +1,93 @@
+#!/bin/ksh
+
+##
+# tmux-session: create a new tmux session to a particular set of hosts.
+# 
+# Modify the hosts in "case $windowgroup" below to define your host groups,
+# replacing groupA, groupB, and groupC.
+# 
+# Copyright (c) 2015 O'Shaughnessy Evans <shaug+github@wumpus.org>
+# Free to use, copy, modify, etc.
+##
+
+ME=${0##*/}
+VERSION=$(set $Revision$; print $2)
+. $HOME/lib/libadm.sh
+session=
+windows=
+windowgroup=
+USAGE="usage: $ME -s _session_ [-W _window_group_]"
+HELP=$(cat <<EOhelp
+$ME: -s _session_ [-W _window_group_]
+
+Usage: $ME -s _session_ [-W _window_group_] _host_ [_host_ ...]
+       $ME -v
+       $ME -h
+       $ME --help
+
+Options:
+       -v             Show the script version ($VERSION)
+       -h             Show this "help" message
+       --help         Show more comprehensive usage information
+       -s _session_         Session name (required)
+       -W _window_group_    Group of hosts for which windows should be opened
+                            (groupA, groupB, groupC)
+EOhelp)
+
+# process the command line
+[[ "$1" = "--help" ]] && { perldoc -U -t -F $0; exit $EX_OK; }
+while getopts :s:W:vh opt; do
+    case $opt in
+    W)      windowgroup=$OPTARG;;
+    s)      session=$OPTARG;;
+    h)      print "$HELP"; die $EX_OK;;
+    v)      die $EX_OK "version $VERSION";;
+    ?)      die $EX_USAGE "$OPTARG is an invalid option" "$USAGE" \
+                          "See '$ME -h' for more info.";;
+    esac
+done
+shift $(( $OPTIND - 1 ))
+
+if [[ -z "$session" && -z "$windowgroup" && $# -eq 1 ]]; then
+    session=$1
+    windowgroup=$1
+else
+    windows="$@"
+fi
+[[ -n "$session" ]] \
+ || die $EX_USAGE "failure: session name is required" "$USAGE"
+
+case $windowgroup in
+groupA)	windows+=" host1 host2 host3";;
+groupB)	windows+=" host4 host5 host6 host7";;
+groupB)	windows+=" host8 host9 host10 host11 host12";;
+*)      die $EX_USAGE "window group \"$windowgroup\" was not recognized." \
+                      "groups:  easyci viaci"
+esac
+
+# Clean $windows by stripping surrounding whitespace
+windows=${windows# *}
+windows=${windows%* }
+
+# Pull the 1st window from the list and use it to create our 1st window
+# when we initialize the session.
+w=${windows%% *}
+windows=${windows#* }
+name=${w##*/}
+host=${w%%/*}
+tmux new-session -d -s "$session" -n "$name"
+tmux send-keys -t "$session:0" "ssh $host"
+tmux send-keys -t "$session:0" Enter
+
+i=1
+for w in $windows; do
+    name=${w##*/}
+    host=${w%%/*}
+    tmux new-window -d -t "$session:$i" -n "$name"
+    tmux send-keys -t "$session:$i" "ssh $host"
+    tmux send-keys -t "$session:$i" Enter
+    let i++
+done
+
+tmux select-window -t "$session:0"
+tmux -2 attach-session -t "$session"
